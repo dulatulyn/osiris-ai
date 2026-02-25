@@ -73,10 +73,10 @@ jobs:
             set -e
             export PATH=$PATH:/usr/bin:/usr/local/bin
             which docker || { echo "ERROR: docker not found in PATH"; exit 1; }
-            docker load < /tmp/osiris-deploy/image.tar.gz
-            docker stop osiris-fraud-api || true
-            docker rm osiris-fraud-api || true
-            docker run -d \
+            sudo docker load < /tmp/osiris-deploy/image.tar.gz
+            sudo docker stop osiris-fraud-api || true
+            sudo docker rm osiris-fraud-api || true
+            sudo docker run -d \
               --name osiris-fraud-api \
               -p 8000:8000 \
               --restart unless-stopped \
