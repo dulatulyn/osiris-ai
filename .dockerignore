@@ -12,7 +12,6 @@ build/
 .env
 .DS_Store
 *.log
-artifacts/
 context/
 guides/
 README.md
