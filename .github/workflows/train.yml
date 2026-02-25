@@ -1,0 +1,49 @@
+name: Train Model
+
+on:
+  workflow_dispatch:
+    inputs:
+      rows:
+        description: "Number of rows to generate"
+        required: false
+        default: "50000"
+      fraud_rate:
+        description: "Fraud rate (0-1)"
+        required: false
+        default: "0.10"
+      epochs:
+        description: "Training epochs"
+        required: false
+        default: "50"
+  push:
+    branches:
+      - train
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_ML_WORKSPACE_NAME: ${{ secrets.AZURE_ML_WORKSPACE_NAME }}
+      AZURE_ML_RESOURCE_GROUP: ${{ secrets.AZURE_ML_RESOURCE_GROUP }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Submit Azure ML Training Job
+        run: |
+          python scripts/submit_azure_ml.py \
+            --epochs ${{ github.event.inputs.epochs || '50' }}
+

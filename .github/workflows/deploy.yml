@@ -1,0 +1,65 @@
+name: Deploy API
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - prod
+  workflow_run:
+    workflows: ["Train Model"]
+    types:
+      - completed
+
+env:
+  IMAGE_NAME: osiris-fraud-api
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+
+
+
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.api
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Save Docker image
+        run: docker save ${{ env.IMAGE_NAME }}:${{ github.sha }} | gzip > image.tar.gz
+
+      - name: Deploy to Azure VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.AZURE_VM_HOST }}
+          username: ${{ secrets.AZURE_VM_USER }}
+          password: ${{ secrets.AZURE_VM_PASSWORD }}
+          source: image.tar.gz
+          target: /tmp/osiris-deploy
+
+      - name: Start container on VM
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.AZURE_VM_HOST }}
+          username: ${{ secrets.AZURE_VM_USER }}
+          password: ${{ secrets.AZURE_VM_PASSWORD }}
+          script: |
+            docker load < /tmp/osiris-deploy/image.tar.gz
+            docker stop osiris-fraud-api || true
+            docker rm osiris-fraud-api || true
+            docker run -d --name osiris-fraud-api -p 8000:8000 --restart unless-stopped ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            rm -rf /tmp/osiris-deploy
