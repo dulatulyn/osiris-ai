@@ -11,16 +11,24 @@ on:
         description: "Fraud rate (0-1)"
         required: false
         default: "0.10"
-      epochs:
-        description: "Training epochs"
+      n_estimators:
+        description: "XGBoost n_estimators"
         required: false
-        default: "50"
+        default: "500"
+      max_depth:
+        description: "XGBoost max_depth"
+        required: false
+        default: "7"
+      model_version:
+        description: "Model version tag (e.g. v1, v2)"
+        required: false
+        default: "v1"
   push:
     branches:
       - train
 
 jobs:
-  train:
+  submit-training:
     runs-on: ubuntu-latest
     env:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -29,6 +37,7 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       AZURE_ML_WORKSPACE_NAME: ${{ secrets.AZURE_ML_WORKSPACE_NAME }}
       AZURE_ML_RESOURCE_GROUP: ${{ secrets.AZURE_ML_RESOURCE_GROUP }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,28 +48,22 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Install Azure ML SDK
+        run: pip install azure-ai-ml azure-identity
 
-      - name: Generate Dataset
+      - name: Submit training job to Azure ML (with wait + artifact download)
         run: |
-          mkdir -p data
-          python scripts/generate_dataset.py \
-            --rows ${{ github.event.inputs.rows || '5000' }} \
+          python scripts/submit_azure_ml.py \
+            --rows ${{ github.event.inputs.rows || '50000' }} \
             --fraud-rate ${{ github.event.inputs.fraud_rate || '0.10' }} \
-            --output data/dataset.csv
+            --n-estimators ${{ github.event.inputs.n_estimators || '500' }} \
+            --max-depth ${{ github.event.inputs.max_depth || '7' }} \
+            --model-version ${{ github.event.inputs.model_version || 'v1' }} \
+            --wait
 
-      - name: Train Model
-        run: |
-          python -m src.main train \
-            --data data/dataset.csv \
-            --epochs ${{ github.event.inputs.epochs || '50' }} \
-            --batch-size 512
-
-      - name: Upload model artifacts
+      - name: Upload model artifacts to GitHub
         uses: actions/upload-artifact@v4
         with:
-          name: model-${{ github.sha }}
+          name: model-${{ github.event.inputs.model_version || 'v1' }}-${{ github.sha }}
           path: artifacts/
-          retention-days: 7
-
+          retention-days: 30

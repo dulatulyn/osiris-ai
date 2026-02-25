@@ -1,35 +1,71 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
+import threading
+from dataclasses import dataclass, field
 
-from src.config import METRICS_PATH
+
+@dataclass
+class _InferenceStats:
+    total: int = 0
+    fraud: int = 0
+    legit: int = 0
+    score_sum: float = 0.0
+    buckets: dict = field(
+        default_factory=lambda: {"0-20": 0, "21-50": 0, "51-80": 0, "81-100": 0}
+    )
+
+    def record(self, fraud_score: int, risk_level: str) -> None:
+        self.total += 1
+        is_high_risk = risk_level in ("high", "critical")
+        if is_high_risk:
+            self.fraud += 1
+        else:
+            self.legit += 1
+        self.score_sum += fraud_score
+
+        if fraud_score <= 20:
+            self.buckets["0-20"] += 1
+        elif fraud_score <= 50:
+            self.buckets["21-50"] += 1
+        elif fraud_score <= 80:
+            self.buckets["51-80"] += 1
+        else:
+            self.buckets["81-100"] += 1
+
+    def to_dict(self) -> dict:
+        return {
+            "total_predictions": self.total,
+            "fraud_predictions": self.fraud,
+            "legit_predictions": self.legit,
+            "fraud_rate": round(self.fraud / max(self.total, 1), 4),
+            "avg_fraud_score": round(self.score_sum / max(self.total, 1), 2),
+            "score_distribution": dict(self.buckets),
+        }
+
+    def reset(self) -> None:
+        self.total = 0
+        self.fraud = 0
+        self.legit = 0
+        self.score_sum = 0.0
+        self.buckets = {"0-20": 0, "21-50": 0, "51-80": 0, "81-100": 0}
 
 
 class MetricsService:
-    def evaluate(self, dataset_path: str | None = None) -> dict:
-        """
-        Loads precomputed metrics from training (metrics.json).
-        
-        Args:
-            dataset_path: Ignored. Maintained for backwards compatibility with controller signature.
-            
-        Returns:
-            Dictionary containing metrics like auc_roc, log_loss, etc.
-        """
-        if not METRICS_PATH.exists():
-            raise FileNotFoundError(f"Metrics file not found at {METRICS_PATH}. Has the model been trained?")
+    def __init__(self):
+        self._stats = _InferenceStats()
+        self._lock = threading.Lock()
 
-        with open(METRICS_PATH, "r") as f:
-            metrics = json.load(f)
+    def record(self, fraud_score: int, risk_level: str) -> None:
+        with self._lock:
+            self._stats.record(fraud_score, risk_level)
 
-        # Standardizing output if some fields are missing from legacy trainer outputs
-        if "total_samples" not in metrics:
-            metrics["total_samples"] = 0
-            metrics["fraud_samples"] = 0
-            metrics["legit_samples"] = 0
+    def get_metrics(self) -> dict:
+        with self._lock:
+            return self._stats.to_dict()
 
-        return metrics
+    def reset(self) -> None:
+        with self._lock:
+            self._stats.reset()
 
 
 metrics_service = MetricsService()

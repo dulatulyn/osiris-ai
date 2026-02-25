@@ -9,29 +9,32 @@ class PredictionResponse(BaseModel):
     probability: float
 
 
-class ConfusionMatrixResponse(BaseModel):
-    tp: int
-    fp: int
-    fn: int
-    tn: int
-
-
-class MetricsResponse(BaseModel):
-    auc_roc: float
-    auc_pr: float
-    log_loss: float
-    accuracy: float
-    precision: float
-    recall: float
-    specificity: float
-    f1_score: float
-    mcc: float
-    confusion_matrix: ConfusionMatrixResponse
-    total_samples: int
-    fraud_samples: int
-    legit_samples: int
+class InferenceMetricsResponse(BaseModel):
+    total_predictions: int
+    fraud_predictions: int
+    legit_predictions: int
+    fraud_rate: float
+    avg_fraud_score: float
+    score_distribution: dict
 
 
 class HealthResponse(BaseModel):
     status: str
+    model_loaded: bool
+
+
+class ModelProfileInfo(BaseModel):
+    path: str
+    description: str = ""
+    created_at: str = ""
+
+
+class ModelsListResponse(BaseModel):
+    active: str
+    profiles: dict[str, ModelProfileInfo]
+
+
+class ActiveModelResponse(BaseModel):
+    active: str
+    info: dict
     model_loaded: bool

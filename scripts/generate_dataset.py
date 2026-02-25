@@ -188,7 +188,7 @@ def _generate_legit_row(
     prev_rejections = int(np.clip(rng.binomial(prev_apps, 0.15), 0, prev_apps))
 
     email_domain = rng.choice(EMAIL_DOMAINS_LEGIT, p=EMAIL_WEIGHTS_LEGIT)
-    phone_age = int(np.clip(rng.normal(800, 400), 30, 3650))
+    phone_age = int(np.clip(rng.normal(700, 500), 1, 3650))
     phone_type = "mobile" if rng.random() < 0.92 else "landline"
 
     if rng.random() < 0.4:
@@ -204,34 +204,34 @@ def _generate_legit_row(
         requested_amount = float(rng.integers(10_000, 150_001))
         loan_term = int(rng.choice([7, 14, 30]))
 
-    if rng.random() < 0.75:
+    if rng.random() < 0.70:
         app_hour = int(rng.integers(8, 21))
     else:
         app_hour = int(rng.integers(0, 24))
     app_weekday = int(rng.integers(0, 7))
 
     device_id = rng.choice(device_pool)
-    device_reuse = int(np.clip(rng.poisson(1.2), 1, 8))
+    device_reuse = int(np.clip(rng.poisson(1.5), 1, 15))
     ip = rng.choice(ip_pool)
-    ip_reuse = int(np.clip(rng.poisson(1.5), 1, 10))
+    ip_reuse = int(np.clip(rng.poisson(2.0), 1, 15))
 
-    proxy = 1 if rng.random() < 0.03 else 0
-    vpn = 1 if rng.random() < 0.08 else 0
-    tor = 0
+    proxy = 1 if rng.random() < 0.06 else 0
+    vpn = 1 if rng.random() < 0.15 else 0
+    tor = 1 if rng.random() < 0.01 else 0
     browser = str(rng.choice(BROWSER_TYPES, p=[0.55, 0.15, 0.15, 0.10, 0.05]))
     os_type = str(rng.choice(OS_TYPES, p=[0.25, 0.20, 0.35, 0.15, 0.05]))
 
-    fill_time = int(np.clip(rng.normal(420, 120), 60, 1800))
-    corrections = int(np.clip(rng.poisson(2), 0, 15))
-    copy_paste = round(float(np.clip(rng.beta(1.5, 8), 0, 0.4)), 3)
-    typing_speed = round(float(np.clip(rng.normal(4.5, 1.2), 1, 10)), 2)
+    fill_time = int(np.clip(rng.normal(400, 180), 30, 1800))
+    corrections = int(np.clip(rng.poisson(3), 0, 20))
+    copy_paste = round(float(np.clip(rng.beta(2, 5), 0, 0.8)), 3)
+    typing_speed = round(float(np.clip(rng.normal(5.0, 1.8), 1, 12)), 2)
     night_flag = 1 if 0 <= app_hour < 6 else 0
     weekend_flag = 1 if app_weekday >= 5 else 0
-    multi_1h = int(np.clip(rng.poisson(0.2), 0, 3))
-    multi_24h = int(np.clip(rng.poisson(0.5), 0, 5))
+    multi_1h = int(np.clip(rng.poisson(0.3), 0, 5))
+    multi_24h = int(np.clip(rng.poisson(0.8), 0, 8))
 
-    shared_device_iins = int(np.clip(rng.poisson(0.3), 0, 3))
-    shared_ip_iins = int(np.clip(rng.poisson(0.5), 0, 5))
+    shared_device_iins = int(np.clip(rng.poisson(0.5), 0, 6))
+    shared_ip_iins = int(np.clip(rng.poisson(0.8), 0, 8))
 
     return {
         "is_fraud": 0,
@@ -280,6 +280,8 @@ def _generate_fraud_row(
     fraud_device_pool: list[str],
     fraud_ip_pool: list[str],
 ) -> dict[str, Any]:
+    is_sophisticated = rng.random() < 0.35
+
     if rng.random() < 0.3:
         age = int(rng.integers(18, 24))
     elif rng.random() < 0.2:
@@ -299,11 +301,14 @@ def _generate_fraud_row(
     employment = rng.choice(EMPLOYMENT_TYPES, p=EMPLOYMENT_WEIGHTS_FRAUD)
     income = _generate_income(region, employment, age, is_fraud=True)
 
-    prev_apps = int(np.clip(rng.poisson(5), 0, 30))
-    prev_rejections = int(np.clip(rng.binomial(prev_apps, 0.55), 0, prev_apps))
+    prev_apps = int(np.clip(rng.poisson(4), 0, 25))
+    prev_rejections = int(np.clip(rng.binomial(prev_apps, 0.45), 0, prev_apps))
 
-    email_domain = rng.choice(EMAIL_DOMAINS_FRAUD, p=EMAIL_WEIGHTS_FRAUD)
-    phone_age = int(np.clip(rng.exponential(90), 1, 600))
+    if is_sophisticated:
+        email_domain = rng.choice(EMAIL_DOMAINS_LEGIT, p=EMAIL_WEIGHTS_LEGIT)
+    else:
+        email_domain = rng.choice(EMAIL_DOMAINS_FRAUD, p=EMAIL_WEIGHTS_FRAUD)
+    phone_age = int(np.clip(rng.exponential(150), 1, 1200))
     phone_type = "mobile" if rng.random() < 0.97 else "landline"
 
     if rng.random() < 0.5:
@@ -319,44 +324,72 @@ def _generate_fraud_row(
         requested_amount = float(rng.integers(1_000_000, 10_000_001))
         loan_term = int(rng.choice([180, 365, 730]))
 
-    if rng.random() < 0.45:
-        app_hour = int(rng.integers(0, 6))
-    elif rng.random() < 0.3:
-        app_hour = int(rng.integers(22, 24))
+    if is_sophisticated:
+        if rng.random() < 0.65:
+            app_hour = int(rng.integers(8, 21))
+        else:
+            app_hour = int(rng.integers(0, 24))
+        app_weekday = int(rng.integers(0, 7))
     else:
-        app_hour = int(rng.integers(0, 24))
-    app_weekday = int(rng.choice([0, 1, 2, 3, 4, 5, 6], p=[0.10, 0.10, 0.10, 0.10, 0.10, 0.25, 0.25]))
+        if rng.random() < 0.40:
+            app_hour = int(rng.integers(0, 6))
+        elif rng.random() < 0.3:
+            app_hour = int(rng.integers(22, 24))
+        else:
+            app_hour = int(rng.integers(0, 24))
+        app_weekday = int(rng.choice([0, 1, 2, 3, 4, 5, 6], p=[0.10, 0.10, 0.10, 0.10, 0.10, 0.25, 0.25]))
 
-    use_fraud_device = rng.random() < 0.7
-    device_id = rng.choice(fraud_device_pool) if use_fraud_device else rng.choice(device_pool)
-    device_reuse = int(np.clip(rng.poisson(6), 2, 50))
+    if is_sophisticated:
+        device_id = rng.choice(device_pool)
+        device_reuse = int(np.clip(rng.poisson(2.5), 1, 12))
+        ip = rng.choice(ip_pool)
+        ip_reuse = int(np.clip(rng.poisson(3.0), 1, 15))
+    else:
+        use_fraud_device = rng.random() < 0.65
+        device_id = rng.choice(fraud_device_pool) if use_fraud_device else rng.choice(device_pool)
+        device_reuse = int(np.clip(rng.poisson(5), 1, 30))
+        use_fraud_ip = rng.random() < 0.60
+        ip = rng.choice(fraud_ip_pool) if use_fraud_ip else rng.choice(ip_pool)
+        ip_reuse = int(np.clip(rng.poisson(6), 1, 35))
 
-    use_fraud_ip = rng.random() < 0.65
-    ip = rng.choice(fraud_ip_pool) if use_fraud_ip else rng.choice(ip_pool)
-    ip_reuse = int(np.clip(rng.poisson(8), 2, 60))
-
-    proxy = 1 if rng.random() < 0.35 else 0
-    vpn = 1 if rng.random() < 0.50 else 0
-    tor = 1 if rng.random() < 0.15 else 0
+    if is_sophisticated:
+        proxy = 1 if rng.random() < 0.10 else 0
+        vpn = 1 if rng.random() < 0.20 else 0
+        tor = 0
+    else:
+        proxy = 1 if rng.random() < 0.30 else 0
+        vpn = 1 if rng.random() < 0.45 else 0
+        tor = 1 if rng.random() < 0.12 else 0
 
     browser = str(rng.choice(BROWSER_TYPES, p=[0.45, 0.20, 0.05, 0.10, 0.20]))
     os_type = str(rng.choice(OS_TYPES, p=[0.35, 0.05, 0.30, 0.05, 0.25]))
 
-    if rng.random() < 0.6:
-        fill_time = int(np.clip(rng.exponential(60), 10, 180))
+    if is_sophisticated:
+        fill_time = int(np.clip(rng.normal(320, 150), 60, 1200))
+        copy_paste = round(float(np.clip(rng.beta(2.5, 4), 0, 0.7)), 3)
+        typing_speed = round(float(np.clip(rng.normal(5.5, 1.8), 1.5, 11)), 2)
     else:
-        fill_time = int(np.clip(rng.normal(200, 80), 30, 600))
+        if rng.random() < 0.5:
+            fill_time = int(np.clip(rng.exponential(80), 15, 300))
+        else:
+            fill_time = int(np.clip(rng.normal(220, 100), 30, 600))
+        copy_paste = round(float(np.clip(rng.beta(4, 3), 0.05, 0.95)), 3)
+        typing_speed = round(float(np.clip(rng.normal(7.0, 2.0), 2, 14)), 2)
 
-    corrections = int(np.clip(rng.poisson(6), 0, 30))
-    copy_paste = round(float(np.clip(rng.beta(5, 3), 0.1, 1.0)), 3)
-    typing_speed = round(float(np.clip(rng.normal(7.5, 2.0), 2, 15)), 2)
+    corrections = int(np.clip(rng.poisson(5), 0, 25))
     night_flag = 1 if 0 <= app_hour < 6 else 0
     weekend_flag = 1 if app_weekday >= 5 else 0
-    multi_1h = int(np.clip(rng.poisson(2.5), 0, 15))
-    multi_24h = int(np.clip(rng.poisson(6), 0, 30))
 
-    shared_device_iins = int(np.clip(rng.poisson(4), 1, 20))
-    shared_ip_iins = int(np.clip(rng.poisson(5), 1, 25))
+    if is_sophisticated:
+        multi_1h = int(np.clip(rng.poisson(1.0), 0, 6))
+        multi_24h = int(np.clip(rng.poisson(2.0), 0, 10))
+        shared_device_iins = int(np.clip(rng.poisson(1.5), 0, 8))
+        shared_ip_iins = int(np.clip(rng.poisson(2.0), 0, 10))
+    else:
+        multi_1h = int(np.clip(rng.poisson(2.0), 0, 12))
+        multi_24h = int(np.clip(rng.poisson(5), 0, 25))
+        shared_device_iins = int(np.clip(rng.poisson(3.5), 0, 18))
+        shared_ip_iins = int(np.clip(rng.poisson(4), 0, 20))
 
     return {
         "is_fraud": 1,

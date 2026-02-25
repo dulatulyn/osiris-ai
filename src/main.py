@@ -1,6 +1,5 @@
 import argparse
 import os
-import sys
 from pathlib import Path
 
 
@@ -14,10 +13,14 @@ def run_api(host: str = "0.0.0.0", port: int = 8000) -> None:
     uvicorn.run("src.api.app:create_app", host=host, port=port, factory=True)
 
 
-def run_train(args: list[str]) -> None:
-    from src.training.trainer import main as train_main
-    sys.argv = ["train"] + args
-    train_main()
+def run_train(args) -> None:
+    from src.training.trainer import train
+    train(
+        data_path=args.data,
+        n_estimators=args.n_estimators,
+        max_depth=args.max_depth,
+        lr=args.lr,
+    )
 
 
 def main() -> None:
@@ -31,10 +34,13 @@ def main() -> None:
 
     train_parser = subparsers.add_parser("train", help="Train the fraud detection model")
     train_parser.add_argument("--data", type=str, required=True, help="Path to dataset CSV")
-    train_parser.add_argument("--epochs", type=int, default=50)
-    train_parser.add_argument("--batch-size", type=int, default=512)
-    train_parser.add_argument("--lr", type=float, default=1e-3)
+    train_parser.add_argument("--n-estimators", type=int, default=500)
+    train_parser.add_argument("--max-depth", type=int, default=7)
+    train_parser.add_argument("--lr", type=float, default=0.05)
     train_parser.add_argument("--model-version", type=str, default="v1", help="Model version name (e.g. v1, v2)")
+    # Backwards compat flags, ignored
+    train_parser.add_argument("--epochs", type=int, default=None)
+    train_parser.add_argument("--batch-size", type=int, default=None)
 
     args = parser.parse_args()
 
@@ -45,12 +51,7 @@ def main() -> None:
 
     elif args.command == "train":
         os.environ["MODEL_PATH"] = _resolve_model_path(args.model_version)
-        train_args = []
-        train_args.extend(["--data", args.data])
-        train_args.extend(["--epochs", str(args.epochs)])
-        train_args.extend(["--batch-size", str(args.batch_size)])
-        train_args.extend(["--lr", str(args.lr)])
-        run_train(train_args)
+        run_train(args)
 
 
 if __name__ == "__main__":

@@ -17,4 +17,5 @@ artifacts/
 .DS_Store
 *.log
 context
+logs/
 logs

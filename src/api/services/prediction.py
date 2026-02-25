@@ -1,69 +1,62 @@
 from __future__ import annotations
 
-import joblib
-import numpy as np
-import torch
+import threading
+from pathlib import Path
 
-from src.config import ENCODERS_PATH, FEATURE_META_PATH, MODEL_WEIGHTS_PATH, SCALER_PATH
-from src.training.model import FraudDetector
-from src.training.preprocessing import preprocess_single
+import joblib
+import pandas as pd
+
+from src.config import DROP_COLUMNS, FEATURE_META_PATH, PIPELINE_PATH
 
 
 class PredictionService:
     def __init__(self):
-        self._model: FraudDetector | None = None
-        self._scaler = None
-        self._encoders = None
+        self._pipeline = None
         self._feature_cols: list[str] | None = None
-        self._input_dim: int = 0
         self._threshold: float = 0.5
-        self._device = torch.device("cpu")
+        self._lock = threading.RLock()
 
     @property
     def is_loaded(self) -> bool:
-        return self._model is not None
+        return self._pipeline is not None
 
-    def load(self) -> None:
-        meta = joblib.load(FEATURE_META_PATH)
-        self._feature_cols = meta["feature_cols"]
-        self._input_dim = meta["input_dim"]
-        self._threshold = meta.get("threshold", 0.5)
+    def load(self, model_path: Path | None = None) -> None:
+        """Load pipeline.joblib and feature_meta.joblib from the given path."""
+        pipeline_path = (model_path / "pipeline.joblib") if model_path else PIPELINE_PATH
+        meta_path = (model_path / "feature_meta.joblib") if model_path else FEATURE_META_PATH
 
-        self._scaler = joblib.load(SCALER_PATH)
-        self._encoders = joblib.load(ENCODERS_PATH)
+        pipeline = joblib.load(pipeline_path)
+        meta = joblib.load(meta_path)
 
-        self._model = FraudDetector(input_dim=self._input_dim, feature_cols=self._feature_cols)
-        state = torch.load(MODEL_WEIGHTS_PATH, map_location=self._device, weights_only=True)
-        self._model.load_state_dict(state)
-        self._model.to(self._device)
-        self._model.eval()
+        with self._lock:
+            self._pipeline = pipeline
+            self._feature_cols = meta["feature_cols"]
+            self._threshold = float(meta.get("threshold", 0.5))
 
     def predict(self, application_data: dict) -> dict:
-        if not self.is_loaded:
-            raise RuntimeError("Model is not loaded")
+        with self._lock:
+            if not self.is_loaded:
+                raise RuntimeError("Model is not loaded")
 
-        X = preprocess_single(
-            application_data,
-            scaler=self._scaler,
-            encoders=self._encoders,
-            feature_cols=self._feature_cols,
-        )
+            df = pd.DataFrame([application_data])
+            drop_cols = [c for c in DROP_COLUMNS if c in df.columns]
+            df = df.drop(columns=drop_cols, errors="ignore")
 
-        tensor = torch.tensor(X, dtype=torch.float32, device=self._device)
+            for col in self._feature_cols:
+                if col not in df.columns:
+                    df[col] = 0
 
-        with torch.no_grad():
-            logit = self._model(tensor)
-            probability = torch.sigmoid(logit).item()
+            df = df[self._feature_cols]
 
-        fraud_score = int(round(probability * 100))
-        fraud_score = max(0, min(100, fraud_score))
+            prob = float(self._pipeline.predict_proba(df)[0, 1])
 
+        fraud_score = max(0, min(100, int(round(prob * 100))))
         risk_level = self._classify_risk(fraud_score)
 
         return {
             "fraud_score": fraud_score,
             "risk_level": risk_level,
-            "probability": round(probability, 6),
+            "probability": round(prob, 6),
         }
 
     @staticmethod

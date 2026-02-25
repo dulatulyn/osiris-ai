@@ -2,13 +2,14 @@ name: Deploy API
 
 on:
   workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: "GitHub Actions run ID that produced model artifacts (from Train workflow)"
+        required: false
+        default: ""
   push:
     branches:
       - prod
-  workflow_run:
-    workflows: ["Train Model"]
-    types:
-      - completed
 
 env:
   IMAGE_NAME: osiris-fraud-api
@@ -16,26 +17,24 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: read
+      actions: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-
-
-
-      - name: Download model artifacts
-        if: github.event_name == 'workflow_run'
+      - name: Download model artifacts (if run ID provided)
+        if: ${{ github.event.inputs.artifact_run_id != '' }}
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
-          name: model-${{ github.event.workflow_run.head_sha }}
-          path: artifacts/
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ github.event.inputs.artifact_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: artifacts/
+          merge-multiple: true
 
-      - name: Ensure artifacts directory exists for Docker build context
+      - name: Ensure artifacts directory exists for Docker build
         run: mkdir -p artifacts/v1
 
       - name: Set up Docker Buildx
@@ -54,7 +53,7 @@ jobs:
       - name: Save Docker image
         run: docker save ${{ env.IMAGE_NAME }}:${{ github.sha }} | gzip > image.tar.gz
 
-      - name: Deploy to Azure VM
+      - name: Copy image to Azure VM
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.AZURE_VM_HOST }}
@@ -63,7 +62,7 @@ jobs:
           source: image.tar.gz
           target: /tmp/osiris-deploy
 
-      - name: Start container on VM
+      - name: Start container on Azure VM
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.AZURE_VM_HOST }}
@@ -73,5 +72,10 @@ jobs:
             docker load < /tmp/osiris-deploy/image.tar.gz
             docker stop osiris-fraud-api || true
             docker rm osiris-fraud-api || true
-            docker run -d --name osiris-fraud-api -p 8000:8000 --restart unless-stopped ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            docker run -d \
+              --name osiris-fraud-api \
+              -p 8000:8000 \
+              --restart unless-stopped \
+              ${{ env.IMAGE_NAME }}:${{ github.sha }}
             rm -rf /tmp/osiris-deploy
+            echo "Deployed ${{ env.IMAGE_NAME }}:${{ github.sha }}"

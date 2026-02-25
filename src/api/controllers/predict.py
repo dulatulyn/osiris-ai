@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 from src.api.schemas.request import ApplicationRequest
 from src.api.schemas.response import PredictionResponse
+from src.api.services.metrics import metrics_service
 from src.api.services.prediction import prediction_service
 
 router = APIRouter(tags=["prediction"])
@@ -15,4 +16,5 @@ async def predict(application: ApplicationRequest) -> PredictionResponse:
         raise HTTPException(status_code=503, detail="Model is not loaded yet")
 
     result = prediction_service.predict(application.model_dump())
+    metrics_service.record(result["fraud_score"], result["risk_level"])
     return PredictionResponse(**result)
