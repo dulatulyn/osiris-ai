@@ -68,7 +68,11 @@ jobs:
           host: ${{ secrets.AZURE_VM_HOST }}
           username: ${{ secrets.AZURE_VM_USER }}
           password: ${{ secrets.AZURE_VM_PASSWORD }}
+          script_stop: true
           script: |
+            set -e
+            export PATH=$PATH:/usr/bin:/usr/local/bin
+            which docker || { echo "ERROR: docker not found in PATH"; exit 1; }
             docker load < /tmp/osiris-deploy/image.tar.gz
             docker stop osiris-fraud-api || true
             docker rm osiris-fraud-api || true
