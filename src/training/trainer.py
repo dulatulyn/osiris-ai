@@ -24,14 +24,13 @@ from sklearn.metrics import (
 from torch.utils.data import DataLoader, TensorDataset
 
 from src.config import (
-    MODEL_PATH,
     DEFAULT_BATCH_SIZE,
     DEFAULT_EPOCHS,
     DEFAULT_LR,
     DEFAULT_WEIGHT_DECAY,
     EARLY_STOPPING_PATIENCE,
     METRICS_PATH,
-    EARLY_STOPPING_PATIENCE,
+    MODEL_PATH,
     MODEL_WEIGHTS_PATH,
 )
 from src.training.model import FraudDetector
@@ -53,14 +52,14 @@ def _make_loader(X: np.ndarray, y: np.ndarray, batch_size: int, shuffle: bool) -
     return DataLoader(ds, batch_size=batch_size, shuffle=shuffle)
 
 
-def _compute_pos_weight(y_train: np.ndarray) -> torch.Tensor:
+def _compute_pos_weight(y_train: np.ndarray, max_weight: float = 4.0) -> torch.Tensor:
     n_neg = (y_train == 0).sum()
     n_pos = (y_train == 1).sum()
-    weight = n_neg / max(n_pos, 1)
+    weight = min(np.sqrt(n_neg / max(n_pos, 1)), max_weight)
     return torch.tensor([weight], dtype=torch.float32)
 
 
-def _evaluate(model: FraudDetector, loader: DataLoader, device: torch.device) -> tuple[float, float]:
+def _get_predictions(model: FraudDetector, loader: DataLoader, device: torch.device) -> tuple[np.ndarray, np.ndarray]:
     model.eval()
     all_probs = []
     all_labels = []
@@ -73,36 +72,40 @@ def _evaluate(model: FraudDetector, loader: DataLoader, device: torch.device) ->
             all_probs.extend(probs)
             all_labels.extend(y_batch.numpy())
 
-    all_probs = np.array(all_probs)
-    all_labels = np.array(all_labels)
-    preds = (all_probs >= 0.5).astype(int)
+    return np.array(all_probs), np.array(all_labels)
 
+
+def _evaluate(model: FraudDetector, loader: DataLoader, device: torch.device) -> tuple[float, float]:
+    all_probs, all_labels = _get_predictions(model, loader, device)
+    preds = (all_probs >= 0.5).astype(int)
     auc = roc_auc_score(all_labels, all_probs)
     f1 = f1_score(all_labels, preds)
     return auc, f1
 
 
-def _print_test_report(model: FraudDetector, loader: DataLoader, device: torch.device) -> None:
-    model.eval()
-    all_probs = []
-    all_labels = []
+def _find_optimal_threshold(model: FraudDetector, loader: DataLoader, device: torch.device) -> float:
+    all_probs, all_labels = _get_predictions(model, loader, device)
+    best_threshold = 0.5
+    best_f1 = 0.0
+    for t in np.arange(0.1, 0.9, 0.01):
+        preds = (all_probs >= t).astype(int)
+        score = f1_score(all_labels, preds)
+        if score > best_f1:
+            best_f1 = score
+            best_threshold = float(t)
+    return best_threshold
 
-    with torch.no_grad():
-        for X_batch, y_batch in loader:
-            X_batch = X_batch.to(device)
-            logits = model(X_batch)
-            probs = torch.sigmoid(logits).cpu().numpy()
-            all_probs.extend(probs)
-            all_labels.extend(y_batch.numpy())
 
-    all_probs = np.array(all_probs)
-    all_labels = np.array(all_labels)
-    preds = (all_probs >= 0.5).astype(int)
+def _print_test_report(model: FraudDetector, loader: DataLoader, device: torch.device, threshold: float = 0.5) -> None:
+    all_probs, all_labels = _get_predictions(model, loader, device)
+    preds = (all_probs >= threshold).astype(int)
+    logger.info("Using threshold: %.3f", threshold)
 
     tn, fp, fn, tp = confusion_matrix(all_labels, preds).ravel()
     specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
 
     metrics = {
+        "threshold": round(threshold, 4),
         "auc_roc": round(float(roc_auc_score(all_labels, all_probs)), 4),
         "auc_pr": round(float(average_precision_score(all_labels, all_probs)), 4),
         "log_loss": round(float(log_loss(all_labels, all_probs)), 4),
@@ -164,6 +167,7 @@ def train(
     logger.info("Model parameters: %d", sum(p.numel() for p in model.parameters()))
 
     pos_weight = _compute_pos_weight(y_train).to(device)
+    logger.info("pos_weight: %.2f", pos_weight.item())
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -215,7 +219,17 @@ def train(
     logger.info("Loading best model for final evaluation")
     model.load_state_dict(torch.load(MODEL_WEIGHTS_PATH, map_location=device, weights_only=True))
 
-    _print_test_report(model, test_loader, device)
+    threshold = _find_optimal_threshold(model, val_loader, device)
+    logger.info("Optimal threshold: %.3f", threshold)
+
+    import joblib
+    from src.config import FEATURE_META_PATH
+    meta = joblib.load(FEATURE_META_PATH)
+    meta["threshold"] = threshold
+    joblib.dump(meta, FEATURE_META_PATH)
+    logger.info("Threshold saved to feature_meta")
+
+    _print_test_report(model, test_loader, device, threshold=threshold)
 
 
 def main() -> None:

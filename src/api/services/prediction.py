@@ -16,6 +16,7 @@ class PredictionService:
         self._encoders = None
         self._feature_cols: list[str] | None = None
         self._input_dim: int = 0
+        self._threshold: float = 0.5
         self._device = torch.device("cpu")
 
     @property
@@ -26,6 +27,7 @@ class PredictionService:
         meta = joblib.load(FEATURE_META_PATH)
         self._feature_cols = meta["feature_cols"]
         self._input_dim = meta["input_dim"]
+        self._threshold = meta.get("threshold", 0.5)
 
         self._scaler = joblib.load(SCALER_PATH)
         self._encoders = joblib.load(ENCODERS_PATH)
