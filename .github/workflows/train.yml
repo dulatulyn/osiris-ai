@@ -42,8 +42,25 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Submit Azure ML Training Job
+      - name: Generate Dataset
         run: |
-          python scripts/submit_azure_ml.py \
-            --epochs ${{ github.event.inputs.epochs || '50' }}
+          mkdir -p data
+          python scripts/generate_dataset.py \
+            --rows ${{ github.event.inputs.rows || '5000' }} \
+            --fraud-rate ${{ github.event.inputs.fraud_rate || '0.10' }} \
+            --output data/dataset.csv
+
+      - name: Train Model
+        run: |
+          python -m src.main train \
+            --data data/dataset.csv \
+            --epochs ${{ github.event.inputs.epochs || '50' }} \
+            --batch-size 512
+
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-${{ github.sha }}
+          path: artifacts/
+          retention-days: 7
 

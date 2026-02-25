@@ -25,6 +25,18 @@ jobs:
 
 
 
+      - name: Download model artifacts
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: model-${{ github.event.workflow_run.head_sha }}
+          path: artifacts/
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Ensure artifacts directory exists for Docker build context
+        run: mkdir -p artifacts/v1
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
